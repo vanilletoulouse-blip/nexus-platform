@@ -811,11 +811,54 @@
       <button class="agent-btn" onclick="clearChat()">
         <div class="agent-icon" style="background:rgba(255,255,255,0.03);">🗑️</div>
         <div class="agent-btn-info">
-          <span class="agent-btn-name">Effacer le chat</span>
+          <span class="agent-btn-name">Effacer le chat actuel</span>
+        </div>
+      </button>
+      <button class="agent-btn" onclick="toggleMemoryPanel()">
+        <div class="agent-icon" style="background:rgba(130,100,255,0.1);">🧩</div>
+        <div class="agent-btn-info">
+          <span class="agent-btn-name">Mémoire NEXUS</span>
+          <span class="agent-btn-desc">notes · contexte persistant</span>
+        </div>
+      </button>
+      <button class="agent-btn" onclick="toggleHistoryPanel()">
+        <div class="agent-icon" style="background:rgba(29,219,160,0.08);">📚</div>
+        <div class="agent-btn-info">
+          <span class="agent-btn-name">Historique</span>
+          <span class="agent-btn-desc">conversations sauvegardées</span>
         </div>
       </button>
     </div>
 
+  </div>
+
+  <!-- PANNEAU MÉMOIRE -->
+  <div id="memoryPanel" style="display:none;position:fixed;top:60px;left:280px;width:360px;height:calc(100vh - 60px);background:var(--bg-panel);border-right:1px solid var(--border);z-index:100;overflow-y:auto;padding:20px;box-shadow:4px 0 20px rgba(0,0,0,0.4);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:var(--accent);font-family:'Space Mono',monospace;letter-spacing:0.08em;">🧩 MÉMOIRE NEXUS</div>
+      <button onclick="toggleMemoryPanel()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;margin-bottom:12px;line-height:1.6;">Ces notes sont injectées automatiquement dans chaque agent à chaque session. Modifie-les librement.</div>
+    <textarea id="memoryNotes" style="width:100%;min-height:300px;background:var(--bg-card);border:1px solid var(--border);border-radius:10px;color:var(--text);font-family:'Space Mono',monospace;font-size:11px;padding:12px;resize:vertical;outline:none;line-height:1.7;" placeholder="Ex :&#10;- Mon aquarium a un pic de nitrites en cours&#10;- Je prépare la collection automne Rosa Néotéra&#10;- Réunion C3G jeudi prochain&#10;- Solde impôts 1189€ à échelonner avant sept 2026"></textarea>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button onclick="saveMemoryNotes()" style="flex:1;padding:9px;background:var(--accent);border:none;border-radius:8px;color:white;font-family:'Space Mono',monospace;font-size:11px;font-weight:700;cursor:pointer;">💾 Sauvegarder</button>
+      <button onclick="clearMemoryNotes()" style="padding:9px 14px;background:var(--bg-card);border:1px solid var(--border);border-radius:8px;color:var(--text-muted);font-family:'Space Mono',monospace;font-size:11px;cursor:pointer;">Effacer</button>
+    </div>
+    <div id="memorySavedMsg" style="display:none;margin-top:8px;font-size:10px;color:var(--teal);font-family:'Space Mono',monospace;text-align:center;">✓ Mémoire sauvegardée — injectée dans tous les agents</div>
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border);">
+      <div style="font-size:9px;letter-spacing:0.12em;color:var(--text-dim);font-family:'Space Mono',monospace;margin-bottom:10px;text-transform:uppercase;">Historique par agent</div>
+      <div id="historyStats"></div>
+    </div>
+  </div>
+
+  <!-- PANNEAU HISTORIQUE -->
+  <div id="historyPanel" style="display:none;position:fixed;top:60px;left:280px;width:380px;height:calc(100vh - 60px);background:var(--bg-panel);border-right:1px solid var(--border);z-index:100;overflow-y:auto;padding:20px;box-shadow:4px 0 20px rgba(0,0,0,0.4);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:var(--teal);font-family:'Space Mono',monospace;letter-spacing:0.08em;">📚 HISTORIQUE</div>
+      <button onclick="toggleHistoryPanel()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div style="font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;margin-bottom:14px;">Conversations sauvegardées depuis la dernière fois. Clique sur un agent pour reprendre.</div>
+    <div id="historyList"></div>
   </div>
 
   <!-- MAIN -->
@@ -1296,6 +1339,8 @@ function addMessage(role, agentId, content) {
     conversationHistory[agentId].push({ role: 'assistant', content });
   }
   addMessageToDOM(role, content, agentId);
+  // Sauvegarde automatique après chaque message
+  saveAllHistory();
 }
 
 function addMessageToDOM(role, content, agentId) {
@@ -1499,7 +1544,7 @@ async function sendMessage() {
         updateStatus(`→ ${agent.name}`);
 
         // Call the specialized agent
-        const reply = await callAgent(targetAgentId, userContent, []);
+        const reply = await callAgentWithMemory(targetAgentId, userContent, []);
 
         removeThinking();
         addDelegatedMessage(targetAgentId, reply);
@@ -1508,7 +1553,7 @@ async function sendMessage() {
         removeThinking();
         showThinkingCustom('🧠', 'var(--accent-glow)', 'Orchestrateur répond...');
         const history = conversationHistory['orchestrator'].slice(0, -1);
-        const reply = await callAgent('orchestrator', userContent, history);
+        const reply = await callAgentWithMemory('orchestrator', userContent, history);
         removeThinking();
         addMessage('assistant', 'orchestrator', reply);
       }
@@ -1528,7 +1573,7 @@ async function sendMessage() {
 
     try {
       const history = conversationHistory[currentAgent].slice(0, -1);
-      const reply = await callAgent(currentAgent, userContent, history);
+      const reply = await callAgentWithMemory(currentAgent, userContent, history);
       removeThinking();
       addMessage('assistant', currentAgent, reply);
       updateStatus('prêt');
@@ -1594,10 +1639,216 @@ function clearChat() {
   }
 }
 
-// Select orchestrator by default on load
+// ═══════════════════════════════════════════════════
+//  MÉMOIRE PERSISTANTE — NEXUS v5
+// ═══════════════════════════════════════════════════
+
+const STORAGE_KEYS = {
+  apiKey: 'nexus_api_key',
+  memory: 'nexus_memory_notes',
+  history: 'nexus_conversation_history',
+  historyDates: 'nexus_history_dates'
+};
+
+// ── Mémoire globale (notes injectées dans les agents) ──
+
+function loadMemoryNotes() {
+  return localStorage.getItem(STORAGE_KEYS.memory) || '';
+}
+
+function saveMemoryNotes() {
+  const val = document.getElementById('memoryNotes').value.trim();
+  localStorage.setItem(STORAGE_KEYS.memory, val);
+  const msg = document.getElementById('memorySavedMsg');
+  msg.style.display = 'block';
+  setTimeout(() => msg.style.display = 'none', 2500);
+}
+
+function clearMemoryNotes() {
+  if (!confirm('Effacer toute la mémoire NEXUS ?')) return;
+  localStorage.removeItem(STORAGE_KEYS.memory);
+  document.getElementById('memoryNotes').value = '';
+}
+
+function getMemoryContext() {
+  const notes = loadMemoryNotes().trim();
+  if (!notes) return '';
+  return `\n\n━━━ MÉMOIRE NEXUS (contexte actuel de Lili) ━━━\n${notes}\n━━━ FIN MÉMOIRE ━━━`;
+}
+
+// ── Historique des conversations (persist entre sessions) ──
+
+function saveAllHistory() {
+  try {
+    const toSave = {};
+    const dates = {};
+    for (const [agentId, history] of Object.entries(conversationHistory)) {
+      if (history.length > 0) {
+        // On ne sauvegarde que texte (pas les images base64 = trop lourd)
+        toSave[agentId] = history.map(m => ({
+          role: m.role,
+          content: typeof m.content === 'string' ? m.content : '[image]'
+        })).slice(-40); // max 40 messages par agent
+        dates[agentId] = new Date().toISOString();
+      }
+    }
+    localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(toSave));
+    localStorage.setItem(STORAGE_KEYS.historyDates, JSON.stringify(dates));
+  } catch(e) {
+    console.warn('Sauvegarde historique échouée :', e);
+  }
+}
+
+function loadAllHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.history);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch(e) {
+    return {};
+  }
+}
+
+function loadHistoryDates() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.historyDates);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch(e) {
+    return {};
+  }
+}
+
+function clearAgentHistory(agentId) {
+  if (!confirm(`Effacer l'historique de ${AGENTS[agentId]?.name} ?`)) return;
+  conversationHistory[agentId] = [];
+  saveAllHistory();
+  renderHistoryList();
+  renderHistoryStats();
+  if (currentAgent === agentId) clearChat();
+}
+
+// ── Panneaux mémoire / historique ──
+
+function toggleMemoryPanel() {
+  const mp = document.getElementById('memoryPanel');
+  const hp = document.getElementById('historyPanel');
+  hp.style.display = 'none';
+  const open = mp.style.display === 'none';
+  mp.style.display = open ? 'block' : 'none';
+  if (open) {
+    document.getElementById('memoryNotes').value = loadMemoryNotes();
+    renderHistoryStats();
+  }
+}
+
+function toggleHistoryPanel() {
+  const mp = document.getElementById('memoryPanel');
+  const hp = document.getElementById('historyPanel');
+  mp.style.display = 'none';
+  const open = hp.style.display === 'none';
+  hp.style.display = open ? 'block' : 'none';
+  if (open) renderHistoryList();
+}
+
+function renderHistoryStats() {
+  const dates = loadHistoryDates();
+  const el = document.getElementById('historyStats');
+  if (!el) return;
+  const rows = Object.entries(AGENTS).map(([id, agent]) => {
+    const count = (conversationHistory[id] || []).length;
+    const date = dates[id] ? new Date(dates[id]).toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
+      <span style="font-size:11px;color:${count > 0 ? 'var(--text)' : 'var(--text-dim)'};">${agent.icon} ${agent.name}</span>
+      <span style="font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;">${count > 0 ? count + ' msgs · ' + date : '—'}</span>
+    </div>`;
+  }).join('');
+  el.innerHTML = rows;
+}
+
+function renderHistoryList() {
+  const dates = loadHistoryDates();
+  const el = document.getElementById('historyList');
+  if (!el) return;
+  const agents = Object.entries(AGENTS).filter(([id]) => (conversationHistory[id] || []).length > 0);
+  if (agents.length === 0) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--text-dim);font-family:\'Space Mono\',monospace;text-align:center;padding:20px 0;">Aucune conversation sauvegardée</div>';
+    return;
+  }
+  el.innerHTML = agents.map(([id, agent]) => {
+    const history = conversationHistory[id] || [];
+    const count = history.length;
+    const date = dates[id] ? new Date(dates[id]).toLocaleDateString('fr-FR', {day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+    // Dernier message utilisateur
+    const lastUser = [...history].reverse().find(m => m.role === 'user');
+    const preview = lastUser ? (typeof lastUser.content === 'string' ? lastUser.content.substring(0, 80) : '[image]') : '';
+    return `<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;cursor:pointer;transition:border-color 0.2s;" 
+      onmouseover="this.style.borderColor='var(--border-active)'" 
+      onmouseout="this.style.borderColor='var(--border)'"
+      onclick="selectAgent('${id}');toggleHistoryPanel();">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <span style="font-size:12px;font-weight:700;color:${agent.color};">${agent.icon} ${agent.name}</span>
+        <button onclick="event.stopPropagation();clearAgentHistory('${id}')" style="background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:11px;" title="Effacer">🗑️</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted);font-family:'Space Mono',monospace;margin-bottom:5px;">${count} messages · ${date}</div>
+      ${preview ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">"${preview}${preview.length >= 80 ? '…' : ''}"</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ── Injection mémoire dans les appels agents ──
+
+function getAgentSystemWithMemory(agentId) {
+  const agent = AGENTS[agentId];
+  const memCtx = getMemoryContext();
+  return agent.system + memCtx;
+}
+
+// ── Override callAgent pour injecter la mémoire ──
+
+async function callAgentWithMemory(agentId, userMessage, history) {
+  const agent = AGENTS[agentId];
+  const systemWithMemory = getAgentSystemWithMemory(agentId);
+  const messages = (history || []).concat([{ role: 'user', content: userMessage }]);
+
+  const response = await fetch('/.netlify/functions/claude-proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 1500,
+      system: systemWithMemory,
+      messages
+    })
+  });
+  if (!response.ok) {
+    const err = await response.json();
+    throw new Error(err.error?.message || `Erreur API ${response.status}`);
+  }
+  const data = await response.json();
+  return data.content[0]?.text || "Réponse vide.";
+}
+
+// ── Init ──
+
 window.onload = () => {
   loadApiKey();
+
+  // Restaurer l'historique sauvegardé
+  const savedHistory = loadAllHistory();
+  for (const [agentId, history] of Object.entries(savedHistory)) {
+    if (AGENTS[agentId]) {
+      conversationHistory[agentId] = history;
+    }
+  }
+
   selectAgent('orchestrator');
+
+  // Sauvegarde auto toutes les 30 secondes
+  setInterval(saveAllHistory, 30000);
+
+  // Sauvegarde aussi avant de quitter la page
+  window.addEventListener('beforeunload', saveAllHistory);
 };
 </script>
 </body>
